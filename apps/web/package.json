@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@contasys/tax-calculator": "workspace:*",
+    "axios": "^1.13.6",
     "clsx": "^2.1.1",
     "decimal.js": "^10.6.0",
     "lucide-react": "^1.6.0",
