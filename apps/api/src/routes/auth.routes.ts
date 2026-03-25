@@ -17,7 +17,7 @@ const verifyPassword = (password: string, storedHash: string) => {
 };
 
 const authRoutes: FastifyPluginAsync = async (fastify, opts) => {
-  // REGISTRO DE NUEVA EMPRESA (TENANT CIUDADANO/ADMIN)
+  // REGISTRO DE NUEVA EMPRESA (TENANT + COMPANY + ADMIN USER)
   fastify.post('/register', async (request, reply) => {
     const { companyName, rfc, userName, email, password } = request.body as any;
 
@@ -26,54 +26,67 @@ const authRoutes: FastifyPluginAsync = async (fastify, opts) => {
       const existingUser = await prisma.user.findUnique({ where: { email } });
       if (existingUser) return reply.code(400).send({ error: 'El correo ya está en uso' });
 
-      // 2. Crear transacción atómica (Empresa + Dueño Administrador)
+      // 2. Crear transacción atómica (Tenant + Company + User Admin)
       const result = await prisma.$transaction(async (tx: any) => {
-        const company = await tx.company.create({
+        // Crear el Tenant (organización raíz)
+        const tenant = await tx.tenant.create({
           data: {
             name: companyName,
-            rfc: rfc,
-            taxRegime: '601', // Default, después se puede editar
-            address: 'Configurar en perfil'
+            plan: 'starter',
+            countryCode: 'MX',
           }
         });
 
+        // Crear la Company (empresa fiscal)
+        const company = await tx.company.create({
+          data: {
+            tenantId: tenant.id,
+            rfc: rfc || 'XAXX010101000',
+            razonSocial: companyName,
+            nombreComercial: companyName,
+            regimenFiscal: '601',
+            codigoPostal: '00000',
+          }
+        });
+
+        // Crear el usuario administrador
         const user = await tx.user.create({
           data: {
+            tenantId: tenant.id,
             email,
             passwordHash: hashPassword(password),
             name: userName,
             role: 'ADMIN',
-            companyId: company.id
           }
         });
 
-        return { company, user };
+        return { tenant, company, user };
       });
 
-      // 3. Generar token JWT hiper-seguro y multi-tenant
+      // 3. Generar token JWT multi-tenant
       const token = (fastify as any).jwt.sign({ 
         userId: result.user.id, 
-        companyId: result.company.id, 
+        tenantId: result.tenant.id, 
         role: result.user.role 
       });
 
       return reply.code(201).send({
         token,
-        user: { name: result.user.name, role: result.user.role, companyName: result.company.name }
+        user: { name: result.user.name, role: result.user.role, companyName: result.tenant.name }
       });
     } catch (error) {
-       console.error(error);
+       console.error('Registration error:', error);
        return reply.code(500).send({ error: 'Error al registrar el SaaS' });
     }
   });
 
-  // LOGIN CLÁSICO PARA CUALQUIER USUARIO (ADMIN/RRHH/CONTADOR)
+  // LOGIN CLÁSICO
   fastify.post('/login', async (request, reply) => {
     const { email, password } = request.body as any;
     
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { company: true }
+      include: { tenant: true }
     });
 
     if (!user || !verifyPassword(password, user.passwordHash)) {
@@ -82,13 +95,13 @@ const authRoutes: FastifyPluginAsync = async (fastify, opts) => {
 
     const token = (fastify as any).jwt.sign({ 
       userId: user.id, 
-      companyId: user.companyId, 
+      tenantId: user.tenantId, 
       role: user.role 
     });
 
     return {
       token,
-      user: { name: user.name, role: user.role, companyName: user.company?.name || 'Empresa' }
+      user: { name: user.name, role: user.role, companyName: user.tenant?.name || 'Empresa' }
     };
   });
 };
