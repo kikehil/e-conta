@@ -61,7 +61,7 @@ const authRoutes: FastifyPluginAsync = async (fastify, opts) => {
         });
 
         return { tenant, company, user };
-      });
+      }, { timeout: 30000 });
 
       // 3. Generar token JWT multi-tenant
       const token = (fastify as any).jwt.sign({ 
