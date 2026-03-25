@@ -6,6 +6,7 @@ import dashboardRoutes from './routes/dashboard.routes.js';
 import payrollRoutes from './routes/payroll.routes.js';
 import catalogRoutes from './routes/catalogs.routes.js';
 import accountingRoutes from './routes/accounting.routes.js';
+import authRoutes from './routes/auth.routes.js';
 
 const buildApp = async () => {
   const app = Fastify({ logger: true });
@@ -30,6 +31,7 @@ const buildApp = async () => {
   app.register(payrollRoutes, { prefix: '/api/payroll' });
   app.register(catalogRoutes, { prefix: '/api/catalogs' });
   app.register(accountingRoutes, { prefix: '/api/accounting' });
+  app.register(authRoutes, { prefix: '/api/auth' });
 
   return app;
 };
