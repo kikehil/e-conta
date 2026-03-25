@@ -39,8 +39,8 @@ const buildApp = async () => {
 const start = async () => {
   const app = await buildApp();
   try {
-    await app.listen({ port: 3000, host: '0.0.0.0' });
-    app.log.info('🚀 Backend API SaaS ejecutándose y en escucha en http://0.0.0.0:3000');
+    await app.listen({ port: 8080, host: '0.0.0.0' });
+    app.log.info('🚀 Backend API SaaS ejecutándose y en escucha en http://0.0.0.0:8080');
   } catch (err) {
     app.log.error(err);
     process.exit(1);
