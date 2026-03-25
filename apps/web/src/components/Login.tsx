@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/auth';
-import { Lock, Building2, Shield, UserAdd } from 'lucide-react';
+import { Lock, Building2, Shield, UserPlus } from 'lucide-react';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api/auth';
@@ -104,7 +104,7 @@ export const Login: React.FC = () => {
                   <span className="animate-pulse">Conectando a PostgreSQL...</span>
                 ) : (
                   <>
-                    {isRegisterMode ? <UserAdd className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                    {isRegisterMode ? <UserPlus className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
                     {isRegisterMode ? 'Crear mi Empresa' : 'Entrar a Mi Empresa'}
                   </>
                 )}
