@@ -1,0 +1,16 @@
+{
+  "name": "@contasys/cfdi",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "xmlbuilder2": "^4.0.3"
+  }
+}

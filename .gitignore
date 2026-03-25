@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.cer
+*.key
+*.pem
+.DS_Store
+logs/
+.turbo/

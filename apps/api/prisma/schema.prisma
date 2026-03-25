@@ -1,0 +1,290 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  plan         String    @default("starter")
+  countryCode  String    @default("MX") @map("country_code") @db.Char(2)
+  isActive     Boolean   @default(true) @map("is_active")
+  settings     Json      @default("{}")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  companies    Company[]
+
+  @@map("tenants")
+}
+
+model Company {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  rfc              String    @db.VarChar(13)
+  razonSocial      String    @map("razon_social")
+  nombreComercial  String?   @map("nombre_comercial")
+  regimenFiscal    String    @map("regimen_fiscal") @db.VarChar(3)
+  codigoPostal     String    @map("codigo_postal") @db.VarChar(5)
+  currency         String    @default("MXN") @db.Char(3)
+  fiscalYearStart  Int       @default(1) @map("fiscal_year_start")
+  logoUrl          String?   @map("logo_url")
+  settings         Json      @default("{}")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant           Tenant       @relation(fields: [tenantId], references: [id])
+  accounts         Account[]
+  fiscalYears      FiscalYear[]
+
+  @@unique([tenantId, rfc])
+  @@map("companies")
+}
+
+model Account {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  parentId       String?   @map("parent_id") @db.Uuid
+  code           String    @db.VarChar(20)
+  name           String
+  accountType    String    @map("account_type")
+  nature         String
+  level          Int       @default(1)
+  allowsEntries  Boolean   @default(true) @map("allows_entries")
+  satGroupCode   String?   @map("sat_group_code") @db.VarChar(10)
+  currency       String?   @default("MXN") @db.Char(3)
+  isBankAccount  Boolean   @default(false) @map("is_bank_account")
+  isActive       Boolean   @default(true) @map("is_active")
+
+  company        Company   @relation(fields: [companyId], references: [id])
+  parent         Account?  @relation("AccountToAccount", fields: [parentId], references: [id])
+  children       Account[] @relation("AccountToAccount")
+
+  @@unique([companyId, code])
+  @@map("accounts")
+}
+
+model FiscalYear {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId  String    @map("company_id") @db.Uuid
+  year       Int
+  status     String    @default("OPEN")
+  closedAt   DateTime? @map("closed_at") @db.Timestamptz
+  closedBy   String?   @map("closed_by") @db.Uuid
+
+  company    Company   @relation(fields: [companyId], references: [id])
+  periods    Period[]
+
+  @@unique([companyId, year])
+  @@map("fiscal_years")
+}
+
+model Period {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fiscalYearId     String    @map("fiscal_year_id") @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  month            Int
+  year             Int
+  status           String    @default("OPEN")
+  satCatalogSent   Boolean   @default(false) @map("sat_catalog_sent")
+  satBalanzaSent   Boolean   @default(false) @map("sat_balanza_sent")
+  satPolizasSent   Boolean   @default(false) @map("sat_polizas_sent")
+  closedAt         DateTime? @map("closed_at") @db.Timestamptz
+
+  fiscalYear       FiscalYear @relation(fields: [fiscalYearId], references: [id])
+
+  @@unique([companyId, year, month])
+  @@map("periods")
+}
+
+model ThirdParty {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  rfc            String?   @db.VarChar(13)
+  razonSocial    String    @map("razon_social")
+  regimenFiscal  String?   @map("regimen_fiscal") @db.VarChar(3)
+  usoCfdi        String?   @map("uso_cfdi") @db.VarChar(3)
+  codigoPostal   String?   @map("codigo_postal") @db.VarChar(5)
+  partyType      String    @map("party_type")
+  isForeign      Boolean   @default(false) @map("is_foreign")
+  countryCode    String?   @default("MX") @map("country_code") @db.Char(2)
+  email          String?
+  phone          String?   @db.VarChar(20)
+  address        Json?
+  creditLimit    Decimal?  @map("credit_limit") @db.Decimal(19,4)
+  creditDays     Int?      @default(0) @map("credit_days")
+  diotType       String?   @map("diot_type")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("third_parties")
+}
+
+model JournalEntry {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  periodId       String    @map("period_id") @db.Uuid
+  entryDate      DateTime  @map("entry_date") @db.Date
+  reference      String?   @db.VarChar(50)
+  description    String
+  entryType      String    @map("entry_type")
+  sourceId       String?   @map("source_id") @db.Uuid
+  sourceType     String?   @map("source_type")
+  status         String    @default("DRAFT")
+  createdBy      String    @map("created_by") @db.Uuid
+  postedBy       String?   @map("posted_by") @db.Uuid
+  postedAt       DateTime? @map("posted_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  lines          JournalLine[]
+
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entryId        String    @map("entry_id") @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  accountId      String    @map("account_id") @db.Uuid
+  debit          Decimal   @default(0) @db.Decimal(19,4)
+  credit         Decimal   @default(0) @db.Decimal(19,4)
+  description    String?
+  thirdPartyId   String?   @map("third_party_id") @db.Uuid
+  costCenterId   String?   @map("cost_center_id") @db.Uuid
+  lineNumber     Int       @map("line_number")
+  currency       String    @default("MXN") @db.Char(3)
+  exchangeRate   Decimal   @default(1) @map("exchange_rate") @db.Decimal(15,6)
+  amountMxn      Decimal   @map("amount_mxn") @db.Decimal(19,4)
+
+  entry          JournalEntry @relation(fields: [entryId], references: [id])
+
+  @@map("journal_lines")
+}
+
+model Invoice {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  thirdPartyId     String    @map("third_party_id") @db.Uuid
+  invoiceType      String    @map("invoice_type")
+  series           String?   @db.VarChar(10)
+  folio            String    @db.VarChar(20)
+  issueDate        DateTime  @map("issue_date") @db.Timestamptz
+  paymentMethod    String    @map("payment_method") @db.VarChar(3)
+  paymentForm      String?   @map("payment_form") @db.VarChar(2)
+  currency         String    @default("MXN") @db.Char(3)
+  exchangeRate     Decimal   @default(1) @map("exchange_rate") @db.Decimal(15,6)
+  useCfdi          String    @map("use_cfdi") @db.VarChar(3)
+  subtotal         Decimal   @db.Decimal(19,4)
+  discount         Decimal   @default(0) @db.Decimal(19,4)
+  taxesTransferred Decimal   @default(0) @map("taxes_transferred") @db.Decimal(19,4)
+  taxesWithheld    Decimal   @default(0) @map("taxes_withheld") @db.Decimal(19,4)
+  total            Decimal   @db.Decimal(19,4)
+
+  satUuid          String?   @unique @map("sat_uuid") @db.Uuid
+  satCertificateNo String?   @map("sat_certificate_no") @db.VarChar(20)
+  satSeal          String?   @map("sat_seal")
+  issuerSeal       String?   @map("issuer_seal")
+  xmlUrl           String?   @map("xml_url")
+  pdfUrl           String?   @map("pdfUrl")
+  qrUrl            String?   @map("qr_url")
+
+  status           String    @default("DRAFT")
+  cancellationReason String? @map("cancellation_reason") @db.VarChar(2)
+  substitutedById  String?   @map("substituted_by") @db.Uuid
+  journalEntryId   String?   @map("journal_entry_id") @db.Uuid
+  createdBy        String    @map("created_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  lines            InvoiceLine[]
+
+  @@unique([companyId, series, folio])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoiceId         String    @map("invoice_id") @db.Uuid
+  companyId         String    @map("company_id") @db.Uuid
+  lineNumber        Int       @map("line_number")
+  productServiceKey String    @map("product_service_key") @db.VarChar(8)
+  unitKey           String    @map("unit_key") @db.VarChar(6)
+  productId         String?   @map("product_id") @db.Uuid
+  description       String
+  unitName          String?   @map("unit_name") @db.VarChar(50)
+  quantity          Decimal   @db.Decimal(19,4)
+  unitPrice         Decimal   @map("unit_price") @db.Decimal(19,4)
+  discount          Decimal   @default(0) @db.Decimal(19,4)
+  subtotal          Decimal   @db.Decimal(19,4)
+  taxObject         String    @default("02") @map("tax_object") @db.VarChar(2)
+  taxes             Json      @default("[]")
+
+  invoice           Invoice   @relation(fields: [invoiceId], references: [id])
+
+  @@map("invoice_lines")
+}
+
+model Employee {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  rfc              String    @db.VarChar(13)
+  curp             String    @db.VarChar(18)
+  nss              String?   @db.VarChar(11)
+  fullName         String    @map("full_name")
+  email            String?
+  hireDate         DateTime  @map("hire_date") @db.Date
+  terminationDate  DateTime? @map("termination_date") @db.Date
+  employmentType   String    @map("employment_type")
+  workShift        String?   @map("work_shift")
+  dailyWage        Decimal   @map("daily_wage") @db.Decimal(19,4)
+  sdi              Decimal   @db.Decimal(19,4)
+  integrationFactor Decimal  @default(1.0452) @map("integration_factor") @db.Decimal(8,6)
+  imssRiskClass    Int       @default(1) @map("imss_risk_class")
+  departmentId     String?   @map("department_id") @db.Uuid
+  jobTitle         String?   @map("job_title")
+  status           String    @default("ACTIVE")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("employees")
+}
+
+model PayrollRun {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId            String    @map("company_id") @db.Uuid
+  payrollType          String    @map("payroll_type")
+  periodStart          DateTime  @map("period_start") @db.Date
+  periodEnd            DateTime  @map("period_end") @db.Date
+  paymentDate          DateTime  @map("payment_date") @db.Date
+  totalPerceptions     Decimal   @default(0) @map("total_perceptions") @db.Decimal(19,4)
+  totalDeductions      Decimal   @default(0) @map("total_deductions") @db.Decimal(19,4)
+  totalNetPay          Decimal   @default(0) @map("total_net_pay") @db.Decimal(19,4)
+  totalIsrWithheld     Decimal   @default(0) @map("total_isr_withheld") @db.Decimal(19,4)
+  totalImssEmployee    Decimal   @default(0) @map("total_imss_employee") @db.Decimal(19,4)
+  totalImssEmployer    Decimal   @default(0) @map("total_imss_employer") @db.Decimal(19,4)
+  totalInfonavit       Decimal   @default(0) @map("total_infonavit") @db.Decimal(19,4)
+  status               String    @default("DRAFT")
+  journalEntryId       String?   @map("journal_entry_id") @db.Uuid
+  createdBy            String    @map("created_by") @db.Uuid
+  approvedBy           String?   @map("approved_by") @db.Uuid
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("payroll_runs")
+}
+
+model BankAccount {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  accountId        String    @map("account_id") @db.Uuid
+  bankName         String    @map("bank_name")
+  clabe            String?   @db.VarChar(18)
+  accountNumber    String?   @map("account_number") @db.VarChar(30)
+  currency         String    @default("MXN") @db.Char(3)
+  belvoAccountId   String?   @map("belvo_account_id")
+  lastSyncAt       DateTime? @map("last_sync_at") @db.Timestamptz
+  isActive         Boolean   @default(true) @map("is_active")
+
+  @@map("bank_accounts")
+}

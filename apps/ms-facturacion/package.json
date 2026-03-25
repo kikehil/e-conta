@@ -1,0 +1,15 @@
+{
+  "name": "@contasys/ms-facturacion",
+  "version": "1.0.0",
+  "description": "Microservicio de CFDI 4.0 y Comunicación con PACs",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "fastify": "^4.26.2",
+    "@prisma/client": "^5.22.0",
+    "@contasys/cfdi": "workspace:*"
+  }
+}

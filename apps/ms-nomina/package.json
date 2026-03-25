@@ -1,0 +1,15 @@
+{
+  "name": "@contasys/ms-nomina",
+  "version": "1.0.0",
+  "description": "Microservicio de Expedientes, Asistencia e ISR/IMSS",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "fastify": "^4.26.2",
+    "@prisma/client": "^5.22.0",
+    "@contasys/tax-calculator": "workspace:*"
+  }
+}
