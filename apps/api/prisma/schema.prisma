@@ -7,6 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ================================================================
+// TENANT Y EMPRESAS (Multitenancy)
+// ================================================================
+
 model Tenant {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name         String
@@ -38,13 +42,35 @@ model Company {
   isActive         Boolean   @default(true) @map("is_active")
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  tenant           Tenant       @relation(fields: [tenantId], references: [id])
+  tenant           Tenant               @relation(fields: [tenantId], references: [id])
   accounts         Account[]
   fiscalYears      FiscalYear[]
+  certificates     CompanyCertificate[]
 
   @@unique([tenantId, rfc])
   @@map("companies")
 }
+
+// Certificados CSD (Certificado de Sello Digital) del emisor
+model CompanyCertificate {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId     String    @map("company_id") @db.Uuid
+  certificateNo String    @map("certificate_no") @db.VarChar(20)
+  cerEncrypted  Bytes     @map("cer_encrypted")
+  keyEncrypted  Bytes     @map("key_encrypted")
+  validFrom     DateTime  @map("valid_from") @db.Date
+  validUntil    DateTime  @map("valid_until") @db.Date
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  company       Company   @relation(fields: [companyId], references: [id])
+
+  @@map("company_certificates")
+}
+
+// ================================================================
+// PLAN DE CUENTAS (NIF México)
+// ================================================================
 
 model Account {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -52,8 +78,8 @@ model Account {
   parentId       String?   @map("parent_id") @db.Uuid
   code           String    @db.VarChar(20)
   name           String
-  accountType    String    @map("account_type")
-  nature         String
+  accountType    String    @map("account_type") // ACTIVO|PASIVO|CAPITAL|INGRESO|COSTO|GASTO|ORDEN
+  nature         String    // DEUDORA|ACREEDORA
   level          Int       @default(1)
   allowsEntries  Boolean   @default(true) @map("allows_entries")
   satGroupCode   String?   @map("sat_group_code") @db.VarChar(10)
@@ -64,10 +90,17 @@ model Account {
   company        Company   @relation(fields: [companyId], references: [id])
   parent         Account?  @relation("AccountToAccount", fields: [parentId], references: [id])
   children       Account[] @relation("AccountToAccount")
+  journalLines   JournalLine[]
+  bankAccounts   BankAccount[]
+  fixedAssets    FixedAsset[]
 
   @@unique([companyId, code])
   @@map("accounts")
 }
+
+// ================================================================
+// PERÍODOS FISCALES
+// ================================================================
 
 model FiscalYear {
   id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -90,17 +123,24 @@ model Period {
   companyId        String    @map("company_id") @db.Uuid
   month            Int
   year             Int
-  status           String    @default("OPEN")
+  status           String    @default("OPEN") // OPEN|CLOSED|LOCKED
   satCatalogSent   Boolean   @default(false) @map("sat_catalog_sent")
   satBalanzaSent   Boolean   @default(false) @map("sat_balanza_sent")
   satPolizasSent   Boolean   @default(false) @map("sat_polizas_sent")
   closedAt         DateTime? @map("closed_at") @db.Timestamptz
 
-  fiscalYear       FiscalYear @relation(fields: [fiscalYearId], references: [id])
+  fiscalYear            FiscalYear             @relation(fields: [fiscalYearId], references: [id])
+  journalEntries        JournalEntry[]
+  diotEntries           DiotEntry[]
+  depreciationSchedules DepreciationSchedule[]
 
   @@unique([companyId, year, month])
   @@map("periods")
 }
+
+// ================================================================
+// TERCEROS (Clientes y Proveedores)
+// ================================================================
 
 model ThirdParty {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -110,7 +150,7 @@ model ThirdParty {
   regimenFiscal  String?   @map("regimen_fiscal") @db.VarChar(3)
   usoCfdi        String?   @map("uso_cfdi") @db.VarChar(3)
   codigoPostal   String?   @map("codigo_postal") @db.VarChar(5)
-  partyType      String    @map("party_type")
+  partyType      String    @map("party_type") // CLIENTE|PROVEEDOR|AMBOS
   isForeign      Boolean   @default(false) @map("is_foreign")
   countryCode    String?   @default("MX") @map("country_code") @db.Char(2)
   email          String?
@@ -118,12 +158,19 @@ model ThirdParty {
   address        Json?
   creditLimit    Decimal?  @map("credit_limit") @db.Decimal(19,4)
   creditDays     Int?      @default(0) @map("credit_days")
-  diotType       String?   @map("diot_type")
+  diotType       String?   @map("diot_type") // 04_PROVEEDOR_NACIONAL|05_PROVEEDOR_EXTRANJERO|15_GLOBAL
   isActive       Boolean   @default(true) @map("is_active")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
+  bills          Bill[]
+  diotEntries    DiotEntry[]
+
   @@map("third_parties")
 }
+
+// ================================================================
+// DIARIO CONTABLE (Motor central)
+// ================================================================
 
 model JournalEntry {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -132,15 +179,16 @@ model JournalEntry {
   entryDate      DateTime  @map("entry_date") @db.Date
   reference      String?   @db.VarChar(50)
   description    String
-  entryType      String    @map("entry_type")
+  entryType      String    @map("entry_type") // MANUAL|FACTURA_EMITIDA|FACTURA_RECIBIDA|PAGO_COBRADO|PAGO_REALIZADO|NOMINA|DEPRECIACION|AJUSTE|CIERRE
   sourceId       String?   @map("source_id") @db.Uuid
-  sourceType     String?   @map("source_type")
-  status         String    @default("DRAFT")
+  sourceType     String?   @map("source_type") // CFDI|PAYMENT|PAYROLL_RUN|FIXED_ASSET
+  status         String    @default("DRAFT") // DRAFT|POSTED|CANCELLED
   createdBy      String    @map("created_by") @db.Uuid
   postedBy       String?   @map("posted_by") @db.Uuid
   postedAt       DateTime? @map("posted_at") @db.Timestamptz
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
+  period         Period    @relation(fields: [periodId], references: [id])
   lines          JournalLine[]
 
   @@map("journal_entries")
@@ -162,20 +210,26 @@ model JournalLine {
   amountMxn      Decimal   @map("amount_mxn") @db.Decimal(19,4)
 
   entry          JournalEntry @relation(fields: [entryId], references: [id])
+  account        Account      @relation(fields: [accountId], references: [id])
+  bankTransactions BankTransaction[]
 
   @@map("journal_lines")
 }
+
+// ================================================================
+// CFDI FACTURAS EMITIDAS (CFDI 4.0)
+// ================================================================
 
 model Invoice {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyId        String    @map("company_id") @db.Uuid
   thirdPartyId     String    @map("third_party_id") @db.Uuid
-  invoiceType      String    @map("invoice_type")
+  invoiceType      String    @map("invoice_type") // I|E|T|N|P
   series           String?   @db.VarChar(10)
   folio            String    @db.VarChar(20)
   issueDate        DateTime  @map("issue_date") @db.Timestamptz
-  paymentMethod    String    @map("payment_method") @db.VarChar(3)
-  paymentForm      String?   @map("payment_form") @db.VarChar(2)
+  paymentMethod    String    @map("payment_method") @db.VarChar(3) // PUE|PPD
+  paymentForm      String?   @map("payment_form") @db.VarChar(2)   // 01,03,04...
   currency         String    @default("MXN") @db.Char(3)
   exchangeRate     Decimal   @default(1) @map("exchange_rate") @db.Decimal(15,6)
   useCfdi          String    @map("use_cfdi") @db.VarChar(3)
@@ -184,23 +238,23 @@ model Invoice {
   taxesTransferred Decimal   @default(0) @map("taxes_transferred") @db.Decimal(19,4)
   taxesWithheld    Decimal   @default(0) @map("taxes_withheld") @db.Decimal(19,4)
   total            Decimal   @db.Decimal(19,4)
-
   satUuid          String?   @unique @map("sat_uuid") @db.Uuid
   satCertificateNo String?   @map("sat_certificate_no") @db.VarChar(20)
   satSeal          String?   @map("sat_seal")
   issuerSeal       String?   @map("issuer_seal")
   xmlUrl           String?   @map("xml_url")
-  pdfUrl           String?   @map("pdfUrl")
+  pdfUrl           String?   @map("pdf_url")
   qrUrl            String?   @map("qr_url")
-
-  status           String    @default("DRAFT")
+  status           String    @default("DRAFT") // DRAFT|STAMPED|SENT|PAID|CANCELLED|SUBSTITUTED
   cancellationReason String? @map("cancellation_reason") @db.VarChar(2)
   substitutedById  String?   @map("substituted_by") @db.Uuid
   journalEntryId   String?   @map("journal_entry_id") @db.Uuid
   createdBy        String    @map("created_by") @db.Uuid
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  lines            InvoiceLine[]
+  thirdParty          ThirdParty           @relation(fields: [thirdPartyId], references: [id])
+  lines               InvoiceLine[]
+  paymentComplements  PaymentComplement[]
 
   @@unique([companyId, series, folio])
   @@map("invoices")
@@ -222,11 +276,76 @@ model InvoiceLine {
   subtotal          Decimal   @db.Decimal(19,4)
   taxObject         String    @default("02") @map("tax_object") @db.VarChar(2)
   taxes             Json      @default("[]")
+  // taxes structure: [{type:"IVA",factor:"Tasa",rate:0.16,base:X,amount:Y}]
 
   invoice           Invoice   @relation(fields: [invoiceId], references: [id])
 
   @@map("invoice_lines")
 }
+
+// ================================================================
+// COMPLEMENTO DE PAGO (REP — CFDI tipo P)
+// ================================================================
+
+model PaymentComplement {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId           String    @map("company_id") @db.Uuid
+  invoiceId           String    @map("invoice_id") @db.Uuid  // CFDI tipo P generado
+  paymentDate         DateTime  @map("payment_date") @db.Date
+  paymentForm         String    @map("payment_form") @db.VarChar(2)
+  currency            String    @default("MXN") @db.Char(3)
+  amount              Decimal   @db.Decimal(19,4)
+  bankAccountOrigin   String?   @map("bank_account_origin")
+  bankAccountDest     String?   @map("bank_account_dest")
+  relatedCfdi         Json      @default("[]") @map("related_cfdi")
+  // relatedCfdi: [{uuid, series, folio, currency, partialAmount, previousBalance, amountPaid, remainingBalance}]
+  satUuid             String?   @unique @map("sat_uuid") @db.Uuid
+  xmlUrl              String?   @map("xml_url")
+  status              String    @default("DRAFT") // DRAFT|STAMPED|CANCELLED
+  journalEntryId      String?   @map("journal_entry_id") @db.Uuid
+  createdBy           String    @map("created_by") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  invoice             Invoice   @relation(fields: [invoiceId], references: [id])
+
+  @@map("payment_complements")
+}
+
+// ================================================================
+// FACTURAS RECIBIDAS (Cuentas por Pagar)
+// ================================================================
+
+model Bill {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId           String    @map("company_id") @db.Uuid
+  thirdPartyId        String    @map("third_party_id") @db.Uuid
+  satUuid             String    @unique @map("sat_uuid")  // UUID del CFDI del proveedor
+  series              String?   @db.VarChar(10)
+  folio               String?   @db.VarChar(20)
+  issueDate           DateTime  @map("issue_date") @db.Date
+  currency            String    @default("MXN") @db.Char(3)
+  exchangeRate        Decimal   @default(1) @map("exchange_rate") @db.Decimal(15,6)
+  subtotal            Decimal   @db.Decimal(19,4)
+  taxesTransferred    Decimal   @default(0) @map("taxes_transferred") @db.Decimal(19,4)
+  taxesWithheld       Decimal   @default(0) @map("taxes_withheld") @db.Decimal(19,4)
+  total               Decimal   @db.Decimal(19,4)
+  vatCreditable       Decimal   @default(0) @map("vat_creditable") @db.Decimal(19,4)
+  dueDate             DateTime? @map("due_date") @db.Date
+  paymentStatus       String    @default("PENDING") @map("payment_status") // PENDING|PARTIAL|PAID|CANCELLED
+  amountPaid          Decimal   @default(0) @map("amount_paid") @db.Decimal(19,4)
+  xmlUrl              String?   @map("xml_url")
+  xmlData             String?   @map("xml_data")  // XML original del proveedor
+  journalEntryId      String?   @map("journal_entry_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  thirdParty          ThirdParty @relation(fields: [thirdPartyId], references: [id])
+
+  @@map("bills")
+}
+
+// ================================================================
+// NÓMINA (LFT + LSS + LISR)
+// ================================================================
 
 model Employee {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -238,7 +357,7 @@ model Employee {
   email            String?
   hireDate         DateTime  @map("hire_date") @db.Date
   terminationDate  DateTime? @map("termination_date") @db.Date
-  employmentType   String    @map("employment_type")
+  employmentType   String    @map("employment_type") // INDEFINIDO|DETERMINADO|OBRA|TEMPORAL
   workShift        String?   @map("work_shift")
   dailyWage        Decimal   @map("daily_wage") @db.Decimal(19,4)
   sdi              Decimal   @db.Decimal(19,4)
@@ -246,8 +365,11 @@ model Employee {
   imssRiskClass    Int       @default(1) @map("imss_risk_class")
   departmentId     String?   @map("department_id") @db.Uuid
   jobTitle         String?   @map("job_title")
-  status           String    @default("ACTIVE")
+  bankClabe        String?   @map("bank_clabe") @db.VarChar(18)
+  status           String    @default("ACTIVE") // ACTIVE|INACTIVE|TERMINATED
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  payrollSlips     PayrollSlip[]
 
   @@map("employees")
 }
@@ -255,7 +377,7 @@ model Employee {
 model PayrollRun {
   id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyId            String    @map("company_id") @db.Uuid
-  payrollType          String    @map("payroll_type")
+  payrollType          String    @map("payroll_type") // SEMANAL|CATORCENAL|QUINCENAL|MENSUAL|EXTRAORDINARIA|FINIQUITO|LIQUIDACION|PTU|AGUINALDO
   periodStart          DateTime  @map("period_start") @db.Date
   periodEnd            DateTime  @map("period_end") @db.Date
   paymentDate          DateTime  @map("payment_date") @db.Date
@@ -266,29 +388,53 @@ model PayrollRun {
   totalImssEmployee    Decimal   @default(0) @map("total_imss_employee") @db.Decimal(19,4)
   totalImssEmployer    Decimal   @default(0) @map("total_imss_employer") @db.Decimal(19,4)
   totalInfonavit       Decimal   @default(0) @map("total_infonavit") @db.Decimal(19,4)
-  status               String    @default("DRAFT")
+  status               String    @default("DRAFT") // DRAFT|CALCULATED|APPROVED|STAMPED|PAID|CANCELLED
   journalEntryId       String?   @map("journal_entry_id") @db.Uuid
   createdBy            String    @map("created_by") @db.Uuid
   approvedBy           String?   @map("approved_by") @db.Uuid
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
+  slips                PayrollSlip[]
+
   @@map("payroll_runs")
 }
 
-model User {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId     String    @map("tenant_id") @db.Uuid
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  name         String
-  role         String    @default("ADMIN")
-  isActive     Boolean   @default(true) @map("is_active")
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+model PayrollSlip {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  payrollRunId          String    @map("payroll_run_id") @db.Uuid
+  companyId             String    @map("company_id") @db.Uuid
+  employeeId            String    @map("employee_id") @db.Uuid
+  perceptions           Json      @default("[]")
+  // [{clave:"001",tipo:"ExentaISR",descripcion:"Sueldos",importeExento:X,importeGravado:Y}]
+  deductions            Json      @default("[]")
+  // [{clave:"001",descripcion:"ISR",importe:X},{clave:"002",descripcion:"IMSS",importe:Y}]
+  otherPayments         Json      @default("[]") @map("other_payments")
+  // [{clave:"002",descripcion:"SubsidioEmpleo",importe:X}]
+  totalPerceptions      Decimal   @map("total_perceptions") @db.Decimal(19,4)
+  totalDeductions       Decimal   @map("total_deductions") @db.Decimal(19,4)
+  netPay                Decimal   @map("net_pay") @db.Decimal(19,4)
+  isrBase               Decimal   @map("isr_base") @db.Decimal(19,4)
+  isrWithheld           Decimal   @map("isr_withheld") @db.Decimal(19,4)
+  subsidyForEmployment  Decimal   @default(0) @map("subsidy_for_employment") @db.Decimal(19,4)
+  isrNet                Decimal   @map("isr_net") @db.Decimal(19,4)
+  imssEmployee          Decimal   @default(0) @map("imss_employee") @db.Decimal(19,4)
+  imssEmployer          Decimal   @default(0) @map("imss_employer") @db.Decimal(19,4)
+  infonavit             Decimal   @default(0) @db.Decimal(19,4)
+  satUuid               String?   @unique @map("sat_uuid") @db.Uuid
+  xmlUrl                String?   @map("xml_url")
+  pdfUrl                String?   @map("pdf_url")
+  status                String    @default("DRAFT")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  payrollRun    PayrollRun @relation(fields: [payrollRunId], references: [id])
+  employee      Employee   @relation(fields: [employeeId], references: [id])
 
-  @@map("users")
+  @@map("payroll_slips")
 }
+
+// ================================================================
+// BANCOS Y TESORERÍA
+// ================================================================
 
 model BankAccount {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -298,9 +444,180 @@ model BankAccount {
   clabe            String?   @db.VarChar(18)
   accountNumber    String?   @map("account_number") @db.VarChar(30)
   currency         String    @default("MXN") @db.Char(3)
+  currentBalance   Decimal   @default(0) @map("current_balance") @db.Decimal(19,4)
   belvoAccountId   String?   @map("belvo_account_id")
   lastSyncAt       DateTime? @map("last_sync_at") @db.Timestamptz
   isActive         Boolean   @default(true) @map("is_active")
 
+  account          Account          @relation(fields: [accountId], references: [id])
+  transactions     BankTransaction[]
+
   @@map("bank_accounts")
+}
+
+model BankTransaction {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bankAccountId         String    @map("bank_account_id") @db.Uuid
+  companyId             String    @map("company_id") @db.Uuid
+  transactionDate       DateTime  @map("transaction_date") @db.Date
+  valueDate             DateTime? @map("value_date") @db.Date
+  description           String
+  reference             String?
+  amount                Decimal   @db.Decimal(19,4)  // Positivo=depósito, negativo=cargo
+  balanceAfter          Decimal?  @map("balance_after") @db.Decimal(19,4)
+  reconciliationStatus  String    @default("PENDING") @map("reconciliation_status") // PENDING|MATCHED|MANUAL|IGNORED
+  journalLineId         String?   @map("journal_line_id") @db.Uuid
+  source                String    @default("MANUAL") // MANUAL|BELVO|OFX|CSV
+  externalId            String?   @unique @map("external_id")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  bankAccount   BankAccount  @relation(fields: [bankAccountId], references: [id])
+  journalLine   JournalLine? @relation(fields: [journalLineId], references: [id])
+
+  @@map("bank_transactions")
+}
+
+// ================================================================
+// ACTIVOS FIJOS (NIF C-6)
+// ================================================================
+
+model FixedAsset {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId             String    @map("company_id") @db.Uuid
+  accountId             String    @map("account_id") @db.Uuid
+  name                  String
+  satAssetType          String    @map("sat_asset_type") // Inmuebles|Maquinaria|EquipoTransporte|Computo
+  acquisitionDate       DateTime  @map("acquisition_date") @db.Date
+  acquisitionCost       Decimal   @map("acquisition_cost") @db.Decimal(19,4)
+  residualValue         Decimal   @default(0) @map("residual_value") @db.Decimal(19,4)
+  depreciationMethod    String    @default("LINEA_RECTA") @map("depreciation_method") // LINEA_RECTA|DOBLE_SALDO|SUM_DIGITOS|UNIDADES_PRODUCCION
+  usefulLifeMonths      Int       @map("useful_life_months")
+  satDepreciationRate   Decimal?  @map("sat_depreciation_rate") @db.Decimal(6,4)  // Tasa Art.34 LISR
+  status                String    @default("ACTIVE") // ACTIVE|DISPOSED|FULLY_DEPRECIATED
+  disposalDate          DateTime? @map("disposal_date") @db.Date
+  disposalAmount        Decimal?  @map("disposal_amount") @db.Decimal(19,4)
+  notes                 String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  account               Account               @relation(fields: [accountId], references: [id])
+  depreciationSchedules DepreciationSchedule[]
+
+  @@map("fixed_assets")
+}
+
+model DepreciationSchedule {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fixedAssetId            String    @map("fixed_asset_id") @db.Uuid
+  companyId               String    @map("company_id") @db.Uuid
+  periodId                String    @map("period_id") @db.Uuid
+  accountingDepreciation  Decimal   @map("accounting_depreciation") @db.Decimal(19,4)
+  fiscalDepreciation      Decimal   @map("fiscal_depreciation") @db.Decimal(19,4)
+  accumulatedAccounting   Decimal   @map("accumulated_accounting") @db.Decimal(19,4)
+  netBookValue            Decimal   @map("net_book_value") @db.Decimal(19,4)
+  journalEntryId          String?   @map("journal_entry_id") @db.Uuid
+
+  fixedAsset    FixedAsset @relation(fields: [fixedAssetId], references: [id])
+  period        Period     @relation(fields: [periodId], references: [id])
+
+  @@unique([fixedAssetId, periodId])
+  @@map("depreciation_schedules")
+}
+
+// ================================================================
+// INVENTARIOS (NIF C-4)
+// ================================================================
+
+model Product {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId           String    @map("company_id") @db.Uuid
+  sku                 String?   @db.VarChar(50)
+  name                String
+  description         String?
+  productServiceKey   String    @map("product_service_key") @db.VarChar(8)
+  unitKey             String    @map("unit_key") @db.VarChar(6)
+  unitName            String?   @map("unit_name") @db.VarChar(50)
+  productType         String    @map("product_type") // PRODUCTO|SERVICIO|COMBO
+  unitCost            Decimal   @default(0) @map("unit_cost") @db.Decimal(19,4)
+  salePrice           Decimal   @default(0) @map("sale_price") @db.Decimal(19,4)
+  vatRate             Decimal   @default(0.16) @map("vat_rate") @db.Decimal(6,4)
+  vatExempt           Boolean   @default(false) @map("vat_exempt")
+  iepsRate            Decimal?  @map("ieps_rate") @db.Decimal(6,4)
+  trackInventory      Boolean   @default(false) @map("track_inventory")
+  costingMethod       String?   @default("PROMEDIO") @map("costing_method") // PEPS|PROMEDIO
+  minStock            Decimal?  @default(0) @map("min_stock") @db.Decimal(19,4)
+  currentStock        Decimal   @default(0) @map("current_stock") @db.Decimal(19,4)
+  inventoryAccountId  String?   @map("inventory_account_id") @db.Uuid
+  costAccountId       String?   @map("cost_account_id") @db.Uuid
+  incomeAccountId     String?   @map("income_account_id") @db.Uuid
+  isActive            Boolean   @default(true) @map("is_active")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("products")
+}
+
+// ================================================================
+// IMPUESTOS — DIOT y declaraciones
+// ================================================================
+
+model DiotEntry {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId       String    @map("company_id") @db.Uuid
+  periodId        String    @map("period_id") @db.Uuid
+  thirdPartyId    String    @map("third_party_id") @db.Uuid
+  diotType        String    @map("diot_type") // 04|05|15
+  vat16Paid       Decimal   @default(0) @map("vat_16_paid") @db.Decimal(19,4)
+  vat8Paid        Decimal   @default(0) @map("vat_8_paid") @db.Decimal(19,4)
+  vat0Paid        Decimal   @default(0) @map("vat_0_paid") @db.Decimal(19,4)
+  vatExemptPaid   Decimal   @default(0) @map("vat_exempt_paid") @db.Decimal(19,4)
+  vatWithheld     Decimal   @default(0) @map("vat_withheld") @db.Decimal(19,4)
+  isrWithheld     Decimal   @default(0) @map("isr_withheld") @db.Decimal(19,4)
+  totalPaid       Decimal   @default(0) @map("total_paid") @db.Decimal(19,4)
+
+  thirdParty      ThirdParty @relation(fields: [thirdPartyId], references: [id])
+  period          Period     @relation(fields: [periodId], references: [id])
+
+  @@unique([companyId, periodId, thirdPartyId])
+  @@map("diot_entries")
+}
+
+// ================================================================
+// AUDITORÍA (Inmutable — solo INSERT)
+// ================================================================
+
+model AuditLog {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  companyId     String?   @map("company_id") @db.Uuid
+  userId        String?   @map("user_id") @db.Uuid
+  action        String    // CREATE|UPDATE|DELETE|LOGIN|STAMP_CFDI|CANCEL_CFDI|POST_JOURNAL
+  resourceType  String    @map("resource_type")
+  resourceId    String?   @map("resource_id") @db.Uuid
+  oldValues     Json?     @map("old_values")
+  newValues     Json?     @map("new_values")
+  ipAddress     String?   @map("ip_address")
+  userAgent     String?   @map("user_agent")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([resourceType, resourceId])
+  @@index([companyId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+// ================================================================
+// USUARIOS
+// ================================================================
+
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String
+  role         String    @default("ADMIN") // ADMIN|ACCOUNTANT|BILLER|HR|READONLY
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@map("users")
 }

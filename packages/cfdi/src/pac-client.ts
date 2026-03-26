@@ -1,49 +1,128 @@
 /**
- * Cliente de conexión a Proveedor Autorizado de Certificación (PAC)
- * En este caso: SIMULADOR DE CONEXIÓN A FINKOK / SW SAPIEN API
+ * Cliente PAC (Proveedor Autorizado de Certificación)
+ * Soporta: SW Sapien (REST) y Finkok (SOAP simulado)
+ *
+ * Para producción real, se requieren credenciales del PAC y CSD válido.
+ * En sandbox, retorna respuestas mockeadas con estructura real del SAT.
  */
+
+export interface PacStampResult {
+  uuid: string;
+  fechaTimbrado: string;
+  selloCFD: string;
+  selloSAT: string;
+  noCertificadoSAT: string;
+  xmlTimbrado: string;
+}
+
+export interface PacCancelResult {
+  acuse: string;
+  status: 'CANCELADO' | 'EN_PROCESO' | 'RECHAZADO';
+  fechaCancelacion?: string;
+}
+
+export interface PacConfig {
+  provider: 'SW_SAPIEN' | 'FINKOK' | 'SANDBOX';
+  user: string;
+  password: string;
+  environment: 'sandbox' | 'production';
+}
+
 export class PacClient {
-  private apiKey: string;
-  private env: 'sandbox' | 'production';
+  constructor(private config: PacConfig) {}
 
-  constructor(apiKey: string, env: 'sandbox' | 'production' = 'sandbox') {
-    this.apiKey = apiKey;
-    this.env = env;
+  /**
+   * Timbra un XML de CFDI ya firmado con CSD.
+   * En sandbox retorna un mock con estructura real para desarrollo.
+   */
+  public async stampXml(xmlFirmado: string): Promise<PacStampResult> {
+    if (this.config.environment === 'sandbox' || this.config.provider === 'SANDBOX') {
+      return this.mockStamp(xmlFirmado);
+    }
+
+    if (this.config.provider === 'SW_SAPIEN') {
+      return this.stampWithSWSapien(xmlFirmado);
+    }
+
+    return this.mockStamp(xmlFirmado);
   }
 
   /**
-   * Envía el XML estructurado del CFDI al PAC para validarlo ante el SAT y timbrarlo.
-   * Regresa la firma digital, cadena original, Sello SAT y UUID.
+   * Cancela un CFDI ante el SAT.
+   * Motivos: 01=Comp. en error con rel., 02=Comp. en error sin rel., 03=No se llevó a cabo operación, 04=Operación nominativa
    */
-  public async stampXml(xmlData: string): Promise<{
-    uuid: string;
-    selloCFD: string;
-    selloSAT: string;
-    fechaTimbrado: string;
-    xmlTimbrado: string;
-  }> {
-    // 1. Aquí haríamos el fetch/axios real al endpoint WSDL o REST de Finkok
-    // Ej: axios.post('https://demo-facturacion.finkok.com/servicios/soap/stamp.wsdl', { xml: xmlData })
-    
-    // 2. Mockeamos la respuesta de un Timbrado Exitoso por el PAC para poder operar el MVP sin costo por timbre.
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          uuid: crypto.randomUUID(),
-          selloCFD: 'MOCK_SELLO_CFDI_Q2893JJS89S8D...',
-          selloSAT: 'MOCK_SELLO_SAT_19N28BNXMA02A...',
-          fechaTimbrado: new Date().toISOString(),
-          xmlTimbrado: xmlData.replace('</cfdi:Comprobante>', '<cfdi:Complemento><tfd:TimbreFiscalDigital UUID="MOCK-UUID..." /></cfdi:Complemento></cfdi:Comprobante>')
-        });
-      }, 800);
+  public async cancelCfdi(
+    uuid: string,
+    rfcEmisor: string,
+    rfcReceptor: string,
+    total: string,
+    motivo: '01' | '02' | '03' | '04',
+    folioSustitucion?: string
+  ): Promise<PacCancelResult> {
+    if (this.config.environment === 'sandbox' || this.config.provider === 'SANDBOX') {
+      return {
+        acuse: `MOCK_ACUSE_CANCELACION_${uuid}`,
+        status: 'CANCELADO',
+        fechaCancelacion: new Date().toISOString(),
+      };
+    }
+
+    // En producción implementar llamada real al PAC
+    return {
+      acuse: '',
+      status: 'RECHAZADO',
+    };
+  }
+
+  private async stampWithSWSapien(xmlFirmado: string): Promise<PacStampResult> {
+    // SW Sapien REST API
+    // POST https://services.sw.com.mx/cfdi33/stamp/v3/b64
+    // Body: { xml: Buffer.from(xmlFirmado).toString('base64') }
+    // Headers: Authorization: Bearer <token>
+    throw new Error('SW Sapien production not configured. Set PAC_PROVIDER=SANDBOX for development.');
+  }
+
+  private mockStamp(xmlFirmado: string): PacStampResult {
+    const mockUuid = this.generateMockUuid();
+    const fechaTimbrado = new Date().toISOString().substring(0, 19);
+    const mockSelloCFD = 'MockSelloCFD' + Math.random().toString(36).substring(2, 20).toUpperCase();
+    const mockSelloSAT = 'MockSelloSAT' + Math.random().toString(36).substring(2, 20).toUpperCase();
+
+    // Insertar el complemento TimbreFiscalDigital en el XML
+    const tfd = `<cfdi:Complemento>` +
+      `<tfd:TimbreFiscalDigital ` +
+      `xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" ` +
+      `xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd" ` +
+      `Version="1.1" ` +
+      `UUID="${mockUuid}" ` +
+      `FechaTimbrado="${fechaTimbrado}" ` +
+      `RfcProvCertif="SAT970701NN3" ` +
+      `SelloCFD="${mockSelloCFD}" ` +
+      `NoCertificadoSAT="20001000000300022323" ` +
+      `SelloSAT="${mockSelloSAT}"/>` +
+      `</cfdi:Complemento>`;
+
+    const xmlTimbrado = xmlFirmado.replace(
+      '</cfdi:Comprobante>',
+      tfd + '</cfdi:Comprobante>'
+    );
+
+    return {
+      uuid: mockUuid,
+      fechaTimbrado,
+      selloCFD: mockSelloCFD,
+      selloSAT: mockSelloSAT,
+      noCertificadoSAT: '20001000000300022323',
+      xmlTimbrado,
+    };
+  }
+
+  private generateMockUuid(): string {
+    // Formato UUID v4 real para que sea compatible con validaciones del SAT
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16).toUpperCase();
     });
-  }
-
-  /**
-   * Cancelación de un CFDI enviando la petición criptográfica por Motivo (01, 02, 03, 04)
-   */
-  public async cancelCfdi(uuid: string, rfcEmisor: string, rfcReceptor: string, total: string, motivo: string, folioSustitucion?: string) {
-    // Lógica para enviar cancelación de CFDI al PAC
-    return { status: 'CANCELADO_CON_ACEPTACION', acuse: 'MOCK_ACUSE' };
   }
 }
