@@ -37,7 +37,7 @@ export const JournalCapture: React.FC = () => {
 
   const handleSeedAccounts = async () => {
     setSeedingAccounts(true);
-    const res = await fetch(`${API}/accounts/seed-sat`, { method: 'POST', headers });
+    const res = await fetch(`${API}/accounts/seed-sat`, { method: 'POST', headers, body: '{}' });
     const j = await res.json();
     if (res.ok) { await fetchAccounts(); alert(j.message); }
     else alert(j.error || 'Error al cargar catálogo');
