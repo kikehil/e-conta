@@ -1,33 +1,54 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Decimal from 'decimal.js';
-import { BookOpen, Plus, Trash2, Save, Send, AlertTriangle } from 'lucide-react';
+import { BookOpen, Plus, Trash2, Save, Send, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useAuthStore } from '../store/auth';
 
 interface JournalLine {
   id: string;
-  account: string; // Ej: 102.01 Bancos
-  debit: string;   // Cargo
-  credit: string;  // Abono
-  concept: string; // Concepto linea
+  account: string;
+  debit: string;
+  credit: string;
+  concept: string;
 }
 
-const MOCK_ACCOUNTS = [
-  { id: '1', code: '102.01', name: 'Bancos Nacionales' },
-  { id: '2', code: '105.01', name: 'Clientes Nacionales' },
-  { id: '3', code: '115.01', name: 'IVA Acreditable Pagado' },
-  { id: '4', code: '208.01', name: 'IVA Trasladado Cobrado' },
-  { id: '5', code: '209.01', name: 'IVA Trasladado Pendiente' },
-  { id: '6', code: '401.01', name: 'Ingresos por Servicios' },
-  { id: '7', code: '601.01', name: 'Sueldos y Salarios' },
-];
+interface Account {
+  id: string;
+  code: string;
+  name: string;
+  allowsEntries: boolean;
+}
+
+const API = '/api';
 
 export const JournalCapture: React.FC = () => {
+  const token = useAuthStore(s => s.token);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [seedingAccounts, setSeedingAccounts] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [type, setType] = useState('DIARIO');
-  const [concept, setConcept] = useState('Provisión general o ajuste contable');
+  const [concept, setConcept] = useState('');
+
+  const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  const fetchAccounts = async () => {
+    const res = await fetch(`${API}/accounts`, { headers });
+    if (res.ok) { const j = await res.json(); setAccounts(j.data || []); }
+  };
+
+  const handleSeedAccounts = async () => {
+    setSeedingAccounts(true);
+    const res = await fetch(`${API}/accounts/seed-sat`, { method: 'POST', headers });
+    const j = await res.json();
+    if (res.ok) { await fetchAccounts(); alert(j.message); }
+    else alert(j.error || 'Error al cargar catálogo');
+    setSeedingAccounts(false);
+  };
+
+  useEffect(() => { fetchAccounts(); }, []);
 
   const [lines, setLines] = useState<JournalLine[]>([
-    { id: '1', account: '102.01 Bancos Nacionales', debit: '0.00', credit: '0.00', concept: '' },
-    { id: '2', account: '401.01 Ingresos por Servicios', debit: '0.00', credit: '0.00', concept: '' },
+    { id: '1', account: '', debit: '0.00', credit: '0.00', concept: '' },
+    { id: '2', account: '', debit: '0.00', credit: '0.00', concept: '' },
   ]);
 
   const addLine = () => {
@@ -87,6 +108,23 @@ export const JournalCapture: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {accounts.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="font-semibold text-amber-800 text-sm">Sin catálogo de cuentas</p>
+            <p className="text-amber-600 text-xs mt-0.5">Esta empresa no tiene plan de cuentas. Carga el catálogo NIF estándar para comenzar.</p>
+          </div>
+          <button
+            onClick={handleSeedAccounts}
+            disabled={seedingAccounts}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-50 shrink-0 ml-4"
+          >
+            <RefreshCw className={`w-4 h-4 ${seedingAccounts ? 'animate-spin' : ''}`} />
+            {seedingAccounts ? 'Cargando...' : 'Cargar catálogo NIF'}
+          </button>
+        </div>
+      )}
 
       <div className="bg-surface-lowest rounded-2xl shadow-sm border border-black/5 p-6 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -179,7 +217,9 @@ export const JournalCapture: React.FC = () => {
           </table>
           
           <datalist id="accountsList">
-            {MOCK_ACCOUNTS.map(a => <option key={a.id} value={`${a.code} ${a.name}`} />)}
+            {accounts.filter(a => a.allowsEntries).map(a => (
+              <option key={a.id} value={`${a.code} ${a.name}`} />
+            ))}
           </datalist>
         </div>
 
