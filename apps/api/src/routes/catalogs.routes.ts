@@ -4,62 +4,64 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const catalogRoutes: FastifyPluginAsync = async (fastify, opts) => {
-  // --- CLIENTES (ThirdParties) ---
+  // --- TERCEROS (Clientes / Proveedores) ---
   
-  fastify.get('/clients', { onRequest: [fastify.authenticate] }, async (request, reply) => {
-    const { companyId } = request.user as { companyId: string };
-    const clients = await prisma.thirdParty.findMany({
-      where: { companyId, type: 'CUSTOMER' },
-      orderBy: { businessName: 'asc' }
+  fastify.get('/third-parties', { onRequest: [fastify.authenticate] }, async (request, reply) => {
+    const { companyId } = request.user as any;
+    const { type } = request.query as any; // CUSTOMER, SUPPLIER, BOTH
+    
+    const where: any = { companyId };
+    if (type) where.partyType = type;
+
+    const parties = await prisma.thirdParty.findMany({
+      where,
+      orderBy: { razonSocial: 'asc' }
     });
-    return { data: clients };
+    return { data: parties };
   });
 
-  fastify.post('/clients', { onRequest: [fastify.authenticate] }, async (request, reply) => {
-    const { companyId, userId } = request.user as { companyId: string; userId: string };
-    const body: any = request.body;
-    const client = await prisma.thirdParty.create({
+  fastify.post('/third-parties', { onRequest: [fastify.authenticate] }, async (request, reply) => {
+    const { companyId } = request.user as any;
+    const body = request.body as any;
+    
+    const party = await prisma.thirdParty.create({
       data: {
         companyId,
-        type: 'CUSTOMER',
         rfc: body.rfc,
-        businessName: body.businessName,
-        taxRegime: body.taxRegime,
-        zipCode: body.zipCode,
-        createdBy: userId
+        razonSocial: body.razonSocial,
+        regimenFiscal: body.regimenFiscal || null,
+        usoCfdi: body.usoCfdi || 'G03',
+        codigoPostal: body.codigoPostal || null,
+        partyType: body.partyType || 'CUSTOMER', // CUSTOMER, SUPPLIER, BOTH
+        isForeign: body.isForeign || false,
+        email: body.email || null,
+        phone: body.phone || null,
+        creditLimit: body.creditLimit || null,
+        creditDays: body.creditDays || 0,
+        diotType: body.diotType || null,
       }
     });
-    return reply.code(201).send({ data: client });
+    return reply.code(201).send({ data: party });
   });
 
-  // --- PRODUCTOS Y SERVICIOS ---
-
-  fastify.get('/products', { onRequest: [fastify.authenticate] }, async (request, reply) => {
-    const { companyId } = request.user as { companyId: string };
-    const products = await prisma.product.findMany({
-      where: { companyId },
-      orderBy: { name: 'asc' }
-    });
-    return { data: products };
-  });
-
-  fastify.post('/products', { onRequest: [fastify.authenticate] }, async (request, reply) => {
-    const { companyId, userId } = request.user as { companyId: string; userId: string };
-    const body: any = request.body;
-    const product = await prisma.product.create({
+  fastify.put('/third-parties/:id', { onRequest: [fastify.authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as any;
+    
+    const party = await prisma.thirdParty.update({
+      where: { id },
       data: {
-        companyId,
-        type: body.type || 'SERVICE',
-        code: body.code, // ClaveProdServ SAT (E.g. 84111506)
-        name: body.name,
-        description: body.description,
-        unitCode: body.unitCode || 'E48', // ClaveUnidad SAT
-        defaultPrice: body.defaultPrice,
-        taxObject: body.taxObject || '02',
-        createdBy: userId
+        rfc: body.rfc,
+        razonSocial: body.razonSocial,
+        regimenFiscal: body.regimenFiscal,
+        usoCfdi: body.usoCfdi,
+        codigoPostal: body.codigoPostal,
+        partyType: body.partyType,
+        email: body.email,
+        phone: body.phone,
       }
     });
-    return reply.code(201).send({ data: product });
+    return { data: party };
   });
 };
 

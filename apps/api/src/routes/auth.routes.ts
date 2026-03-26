@@ -67,6 +67,7 @@ const authRoutes: FastifyPluginAsync = async (fastify, opts) => {
       const token = (fastify as any).jwt.sign({ 
         userId: result.user.id, 
         tenantId: result.tenant.id, 
+        companyId: result.company.id,
         role: result.user.role 
       });
 
@@ -93,9 +94,15 @@ const authRoutes: FastifyPluginAsync = async (fastify, opts) => {
       return reply.code(401).send({ error: 'Credenciales inválidas' });
     }
 
+    // Get the first company for this tenant
+    const company = await prisma.company.findFirst({
+      where: { tenantId: user.tenantId }
+    });
+
     const token = (fastify as any).jwt.sign({ 
       userId: user.id, 
       tenantId: user.tenantId, 
+      companyId: company?.id || '',
       role: user.role 
     });
 
