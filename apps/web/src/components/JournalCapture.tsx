@@ -24,6 +24,7 @@ export const JournalCapture: React.FC = () => {
   const token = useAuthStore(s => s.token);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [seedingAccounts, setSeedingAccounts] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [type, setType] = useState('DIARIO');
   const [concept, setConcept] = useState('');
@@ -45,6 +46,67 @@ export const JournalCapture: React.FC = () => {
   };
 
   useEffect(() => { fetchAccounts(); }, []);
+
+  // Resolver accountId a partir del texto escrito ("110.02 Bancos" → UUID)
+  const resolveAccountId = (text: string): string | null => {
+    const clean = text.trim().toLowerCase();
+    const found = accounts.find(a =>
+      `${a.code} ${a.name}`.toLowerCase() === clean ||
+      a.code.toLowerCase() === clean ||
+      a.name.toLowerCase() === clean
+    );
+    return found?.id || null;
+  };
+
+  const handleSubmit = async () => {
+    if (!totals.isValid) return;
+    setSubmitting(true);
+    try {
+      // Resolver IDs de cuentas
+      const resolvedLines = lines.map(l => {
+        const accountId = resolveAccountId(l.account);
+        return { accountId, debit: l.debit || '0', credit: l.credit || '0', description: l.concept };
+      });
+
+      const missing = resolvedLines.filter(l => !l.accountId);
+      if (missing.length > 0) {
+        alert('Hay cuentas no reconocidas. Selecciona cuentas del catálogo.');
+        setSubmitting(false);
+        return;
+      }
+
+      // Crear póliza (status DRAFT)
+      const res = await fetch(`${API}/journal`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          entryDate: date,
+          description: concept || `Póliza ${type} — ${date}`,
+          entryType: type,
+          lines: resolvedLines,
+        })
+      });
+      const j = await res.json();
+      if (!res.ok) { alert(j.error || 'Error al crear la póliza'); setSubmitting(false); return; }
+
+      // Publicar/Aplicar inmediatamente
+      const postRes = await fetch(`${API}/journal/${j.data.id}/post`, { method: 'PUT', headers, body: '{}' });
+      if (!postRes.ok) {
+        alert('Póliza creada en borrador, pero no se pudo publicar. Revísala en el historial.');
+      } else {
+        alert(`✅ Póliza contable aplicada exitosamente. Folio: ${j.data.id.slice(0, 8).toUpperCase()}`);
+      }
+
+      // Limpiar formulario
+      setConcept('');
+      setLines([
+        { id: '1', account: '', debit: '0.00', credit: '0.00', concept: '' },
+        { id: '2', account: '', debit: '0.00', credit: '0.00', concept: '' },
+      ]);
+    } catch (e) {
+      alert('Error de conexión al guardar la póliza');
+    }
+    setSubmitting(false);
+  };
 
   const [lines, setLines] = useState<JournalLine[]>([
     { id: '1', account: '', debit: '0.00', credit: '0.00', concept: '' },
@@ -248,12 +310,15 @@ export const JournalCapture: React.FC = () => {
       </div>
 
       <div className="flex justify-end pt-4">
-        <button 
-          disabled={!totals.isValid}
+        <button
+          onClick={handleSubmit}
+          disabled={!totals.isValid || submitting}
           className="bg-primary hover:bg-primary-container text-white px-8 py-4 rounded-xl font-bold font-body transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed text-lg"
         >
-          <Send className="w-5 h-5" />
-          Afectar Registros Contables
+          {submitting
+            ? <><RefreshCw className="w-5 h-5 animate-spin" /> Guardando...</>
+            : <><Send className="w-5 h-5" /> Afectar Registros Contables</>
+          }
         </button>
       </div>
     </div>
