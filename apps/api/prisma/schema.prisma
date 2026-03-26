@@ -162,6 +162,7 @@ model ThirdParty {
   isActive       Boolean   @default(true) @map("is_active")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
+  invoices       Invoice[]
   bills          Bill[]
   diotEntries    DiotEntry[]
 
