@@ -36,7 +36,7 @@ export const IncomeChart: React.FC = () => {
           <Tooltip 
             cursor={{ fill: '#f3f4f6' }}
             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-            formatter={(value: number) => [`$${value.toLocaleString()}`, '']}
+            formatter={(value: any) => [`$${Number(value).toLocaleString()}`, '']}
           />
           <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
           <Bar dataKey="ingresos" name="Ingresos (Facturado)" fill="#0d9488" radius={[4, 4, 0, 0]} barSize={32} />

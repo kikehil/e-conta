@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/auth';
 import { Lock, Building2, Shield, UserPlus } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api/auth';
+const API_URL = '/api/auth';
 
 export const Login: React.FC = () => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
