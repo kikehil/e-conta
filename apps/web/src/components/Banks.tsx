@@ -34,6 +34,8 @@ const RECONCILE_LABEL: Record<string, { label: string; class: string }> = {
   IGNORED:  { label: 'Ignorado',   class: 'bg-gray-100 text-gray-500' },
 };
 
+const EMPTY_BANK = { bankName: '', accountId: '', clabe: '', accountNumber: '', currency: 'MXN', initialBalance: '0' };
+
 export const BanksView: React.FC = () => {
   const token = useAuthStore(s => s.token);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -45,6 +47,10 @@ export const BanksView: React.FC = () => {
   const [showNewTx, setShowNewTx] = useState(false);
   const [newTx, setNewTx] = useState({ description: '', amount: '', transactionDate: new Date().toISOString().split('T')[0], reference: '' });
   const [savingTx, setSavingTx] = useState(false);
+  const [showNewBank, setShowNewBank] = useState(false);
+  const [newBank, setNewBank] = useState(EMPTY_BANK);
+  const [savingBank, setSavingBank] = useState(false);
+  const [contaAccounts, setContaAccounts] = useState<{ id: string; code: string; name: string }[]>([]);
 
   const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -52,6 +58,29 @@ export const BanksView: React.FC = () => {
     const res = await fetch(`${API}/banks/summary`, { headers });
     if (res.ok) { const j = await res.json(); setSummary(j.data); setAccounts(j.data.accounts || []); }
     setLoading(false);
+  };
+
+  const fetchContaAccounts = async () => {
+    const res = await fetch(`${API}/accounts`, { headers });
+    if (res.ok) { const j = await res.json(); setContaAccounts(j.data || []); }
+  };
+
+  const handleAddBank = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingBank(true);
+    const res = await fetch(`${API}/banks`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ ...newBank, initialBalance: parseFloat(newBank.initialBalance) || 0 }),
+    });
+    if (res.ok) {
+      setShowNewBank(false);
+      setNewBank(EMPTY_BANK);
+      fetchSummary();
+    } else {
+      const j = await res.json();
+      alert(j.error || 'Error al crear cuenta');
+    }
+    setSavingBank(false);
   };
 
   const fetchTransactions = async (accountId: string) => {
@@ -63,7 +92,7 @@ export const BanksView: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchSummary(); }, []);
+  useEffect(() => { fetchSummary(); fetchContaAccounts(); }, []);
   useEffect(() => { if (selected) fetchTransactions(selected); }, [selected]);
 
   const handleReconcile = async (txId: string, status: string) => {
@@ -127,7 +156,66 @@ export const BanksView: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Account list */}
             <div className="lg:col-span-1">
-              <h3 className="font-semibold text-gray-700 mb-3 text-sm uppercase tracking-wider">Cuentas</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-gray-700 text-sm uppercase tracking-wider">Cuentas</h3>
+                <button
+                  onClick={() => setShowNewBank(true)}
+                  className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90"
+                >
+                  + Nueva Cuenta
+                </button>
+              </div>
+
+              {showNewBank && (
+                <form onSubmit={handleAddBank} className="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-4 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Banco *</label>
+                    <input value={newBank.bankName} onChange={e => setNewBank({ ...newBank, bankName: e.target.value })}
+                      placeholder="BBVA, Santander, Banorte..." required
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Cuenta contable *</label>
+                    <select value={newBank.accountId} onChange={e => setNewBank({ ...newBank, accountId: e.target.value })} required
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white">
+                      <option value="">Selecciona cuenta…</option>
+                      {contaAccounts.filter(a => a.code.startsWith('110')).map(a => (
+                        <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                      ))}
+                      {contaAccounts.filter(a => !a.code.startsWith('110')).map(a => (
+                        <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">CLABE (18 dígitos)</label>
+                    <input value={newBank.clabe} onChange={e => setNewBank({ ...newBank, clabe: e.target.value })}
+                      placeholder="012345678901234567" maxLength={18}
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">No. de cuenta</label>
+                    <input value={newBank.accountNumber} onChange={e => setNewBank({ ...newBank, accountNumber: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Saldo inicial (MXN)</label>
+                    <input type="number" step="0.01" value={newBank.initialBalance} onChange={e => setNewBank({ ...newBank, initialBalance: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="submit" disabled={savingBank}
+                      className="flex-1 py-1.5 bg-primary text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                      {savingBank ? 'Guardando...' : 'Guardar'}
+                    </button>
+                    <button type="button" onClick={() => { setShowNewBank(false); setNewBank(EMPTY_BANK); }}
+                      className="px-4 py-1.5 border border-gray-300 rounded-lg text-sm">
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              )}
+
               <div className="space-y-2">
                 {accounts.map(acc => (
                   <button
@@ -143,8 +231,8 @@ export const BanksView: React.FC = () => {
                     <div className="text-xs text-gray-400">{acc._count?.transactions || 0} movimientos</div>
                   </button>
                 ))}
-                {accounts.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-4">No hay cuentas bancarias configuradas</p>
+                {accounts.length === 0 && !showNewBank && (
+                  <p className="text-sm text-gray-400 text-center py-4">No hay cuentas bancarias.<br/>Usa "+ Nueva Cuenta" para agregar.</p>
                 )}
               </div>
             </div>
