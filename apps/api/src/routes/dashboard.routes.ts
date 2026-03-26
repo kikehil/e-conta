@@ -11,10 +11,20 @@ const dashboardRoutes: FastifyPluginAsync = async (fastify, opts) => {
     const company = await prisma.company.findFirst({ where: { tenantId } });
     const companyName = company?.razonSocial || company?.nombreComercial || 'Mi Empresa';
 
-    // Obtener totales de pólizas por tipo de cuenta
+    // Año en curso para filtrar
+    const currentYear = new Date().getFullYear();
+    const yearStart = new Date(currentYear, 0, 1);
+    const yearEnd = new Date(currentYear, 11, 31, 23, 59, 59);
+
+    // Obtener líneas de pólizas del año con fecha de la póliza
     const lines = await prisma.journalLine.findMany({
       where: { companyId },
-      select: { accountId: true, debit: true, credit: true }
+      select: {
+        accountId: true,
+        debit: true,
+        credit: true,
+        entry: { select: { entryDate: true } }
+      }
     });
 
     // Obtener cuentas para mapear tipos
@@ -25,18 +35,47 @@ const dashboardRoutes: FastifyPluginAsync = async (fastify, opts) => {
 
     const accountMap = new Map(accounts.map(a => [a.id, a]));
 
-    // Calcular totales por tipo
+    // Calcular totales globales y por mes
     let ingresos = 0, gastos = 0, ivaPagar = 0, isrProv = 0;
+    const monthlyMap: Record<number, { ingresos: number; gastos: number }> = {};
+
     for (const line of lines) {
       const acc = accountMap.get(line.accountId);
       if (!acc) continue;
-      const net = Number(line.credit) - Number(line.debit);
-      
-      if (acc.accountType === 'REVENUE') ingresos += net;
-      if (acc.accountType === 'EXPENSE') gastos += (Number(line.debit) - Number(line.credit));
-      if (acc.code === '216.03') ivaPagar += net; // IVA por Pagar
-      if (acc.code === '216.02') isrProv += net; // ISR por Pagar
+
+      const entryDate = line.entry?.entryDate;
+      const isCurrentYear = entryDate && entryDate >= yearStart && entryDate <= yearEnd;
+      const month = entryDate ? entryDate.getMonth() : -1; // 0-indexed
+
+      if (acc.accountType === 'REVENUE') {
+        const net = Number(line.credit) - Number(line.debit);
+        ingresos += net;
+        if (isCurrentYear && month >= 0) {
+          if (!monthlyMap[month]) monthlyMap[month] = { ingresos: 0, gastos: 0 };
+          monthlyMap[month].ingresos += net;
+        }
+      }
+      if (acc.accountType === 'EXPENSE') {
+        const net = Number(line.debit) - Number(line.credit);
+        gastos += net;
+        if (isCurrentYear && month >= 0) {
+          if (!monthlyMap[month]) monthlyMap[month] = { ingresos: 0, gastos: 0 };
+          monthlyMap[month].gastos += net;
+        }
+      }
+      if (acc.code === '216.03') ivaPagar += Number(line.credit) - Number(line.debit);
+      if (acc.code === '216.02') isrProv += Number(line.credit) - Number(line.debit);
     }
+
+    // Construir chartData solo con meses que tienen movimientos
+    const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const chartData = Object.entries(monthlyMap)
+      .map(([m, vals]) => ({
+        month: MONTHS[Number(m)],
+        ingresos: Math.round(vals.ingresos * 100) / 100,
+        gastos: Math.round(vals.gastos * 100) / 100,
+      }))
+      .sort((a, b) => MONTHS.indexOf(a.month) - MONTHS.indexOf(b.month));
 
     // Últimas transacciones (pólizas recientes)
     const recentEntries = await prisma.journalEntry.findMany({
@@ -64,7 +103,7 @@ const dashboardRoutes: FastifyPluginAsync = async (fastify, opts) => {
           ivaPagarEst: Math.round(ivaPagar * 100) / 100,
           isrProvisional: Math.round(isrProv * 100) / 100
         },
-        chartData: [], // Se poblará con datos mensuales cuando haya pólizas
+        chartData,
         transactions
       }
     };
