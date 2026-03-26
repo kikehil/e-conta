@@ -16,6 +16,7 @@ export const Dashboard: React.FC = () => {
   const token = useAuthStore(state => state.token);
   const companyName = useAuthStore(state => state.companyName);
   const [kpis, setKpis] = useState({ ingresosFacturados: 0, gastosDeducibles: 0, ivaPagarEst: 0, isrProvisional: 0 });
+  const [chartData, setChartData] = useState<{ month: string; ingresos: number; gastos: number }[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,6 +29,7 @@ export const Dashboard: React.FC = () => {
         if (res.ok) {
           const json = await res.json();
           setKpis(json.data.kpis);
+          setChartData(json.data.chartData || []);
           setTransactions(json.data.transactions || []);
         }
       } catch (e) {
@@ -91,7 +93,7 @@ export const Dashboard: React.FC = () => {
           {/* Chart y Tabla */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2">
-              <IncomeChart />
+              <IncomeChart data={chartData} />
             </div>
             <div className="lg:col-span-1">
               <TransactionsTable />
