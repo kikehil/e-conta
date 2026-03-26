@@ -96,7 +96,7 @@ export const Dashboard: React.FC = () => {
               <IncomeChart data={chartData} />
             </div>
             <div className="lg:col-span-1">
-              <TransactionsTable />
+              <TransactionsTable data={transactions} />
             </div>
           </div>
         </>
