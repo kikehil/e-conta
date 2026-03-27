@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Dashboard } from './Dashboard';
 import { PayrollCalculator } from './components/PayrollCalculator';
+import { EmployeesView } from './components/Employees';
 import { InvoiceForm } from './components/InvoiceForm';
 import { JournalCapture } from './components/JournalCapture';
 import { CatalogsView } from './components/Catalogs';
@@ -20,7 +21,7 @@ import {
 
 type View =
   | 'dashboard' | 'invoice' | 'bills' | 'rep'
-  | 'payroll' | 'journal' | 'statements' | 'catalogs'
+  | 'employees' | 'payroll' | 'journal' | 'statements' | 'catalogs'
   | 'banks' | 'fixed-assets' | 'taxes';
 
 interface NavItem {
@@ -36,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'invoice',      label: 'Emisión CFDI',        icon: <FileText size={16} />,        roles: ['ADMIN','BILLER'], group: 'facturacion' },
   { id: 'bills',        label: 'Facturas Recibidas',  icon: <Receipt size={16} />,         roles: ['ADMIN','ACCOUNTANT'], group: 'facturacion' },
   { id: 'rep',          label: 'Pagos (REP)',         icon: <Calculator size={16} />,      roles: ['ADMIN','BILLER'], group: 'facturacion' },
+  { id: 'employees',    label: 'Empleados',           icon: <Users size={16} />,           roles: ['ADMIN','HR'], group: 'nomina' },
   { id: 'payroll',      label: 'Nómina',             icon: <Users size={16} />,           roles: ['ADMIN','HR'], group: 'nomina' },
   { id: 'journal',      label: 'Pólizas Contables',  icon: <BookOpen size={16} />,        roles: ['ADMIN','ACCOUNTANT'], group: 'contabilidad' },
   { id: 'statements',   label: 'Estados Financieros', icon: <Building2 size={16} />,       roles: ['ADMIN','ACCOUNTANT'], group: 'contabilidad' },
@@ -167,6 +169,7 @@ function App() {
           {currentView === 'invoice' && <InvoiceForm />}
           {currentView === 'bills' && <BillsView />}
           {currentView === 'rep' && <PaymentComplement />}
+          {currentView === 'employees' && <EmployeesView />}
           {currentView === 'payroll' && <PayrollCalculator />}
           {currentView === 'journal' && <JournalCapture />}
           {currentView === 'statements' && <FinancialStatements />}

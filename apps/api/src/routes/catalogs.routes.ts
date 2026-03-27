@@ -47,7 +47,7 @@ const catalogRoutes: FastifyPluginAsync = async (fastify, opts) => {
   fastify.put('/third-parties/:id', { onRequest: [fastify.authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as any;
-    
+
     const party = await prisma.thirdParty.update({
       where: { id },
       data: {
@@ -62,6 +62,78 @@ const catalogRoutes: FastifyPluginAsync = async (fastify, opts) => {
       }
     });
     return { data: party };
+  });
+
+  // --- PRODUCTOS / SERVICIOS ---
+
+  fastify.get('/products', { onRequest: [fastify.authenticate] }, async (request, reply) => {
+    const { companyId } = request.user as any;
+    const { q } = request.query as any;
+
+    const where: any = { companyId, isActive: true };
+    if (q) {
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { sku: { contains: q, mode: 'insensitive' } },
+        { productServiceKey: { contains: q } },
+      ];
+    }
+
+    const products = await prisma.product.findMany({
+      where,
+      orderBy: { name: 'asc' },
+    });
+    return { data: products };
+  });
+
+  fastify.post('/products', { onRequest: [fastify.authenticate] }, async (request, reply) => {
+    const { companyId } = request.user as any;
+    const body = request.body as any;
+
+    if (!body.name || !body.productServiceKey || !body.unitKey) {
+      return reply.code(400).send({ error: 'Campos obligatorios: name, productServiceKey, unitKey' });
+    }
+
+    const product = await prisma.product.create({
+      data: {
+        companyId,
+        sku: body.sku || null,
+        name: body.name,
+        description: body.description || null,
+        productServiceKey: body.productServiceKey,
+        unitKey: body.unitKey,
+        unitName: body.unitName || null,
+        productType: body.productType || 'SERVICIO',
+        unitCost: body.unitCost || 0,
+        salePrice: body.salePrice || 0,
+        vatRate: body.vatRate ?? 0.16,
+        vatExempt: body.vatExempt || false,
+        iepsRate: body.iepsRate || 0,
+        trackInventory: body.trackInventory || false,
+        costingMethod: body.costingMethod || 'PROMEDIO',
+      }
+    });
+    return reply.code(201).send({ data: product });
+  });
+
+  fastify.put('/products/:id', { onRequest: [fastify.authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as any;
+
+    const product = await prisma.product.update({
+      where: { id },
+      data: {
+        name: body.name,
+        sku: body.sku,
+        salePrice: body.salePrice,
+        unitCost: body.unitCost,
+        vatRate: body.vatRate,
+        vatExempt: body.vatExempt,
+        isActive: body.isActive,
+        description: body.description,
+      }
+    });
+    return { data: product };
   });
 };
 

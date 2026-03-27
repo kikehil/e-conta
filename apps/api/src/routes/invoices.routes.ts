@@ -15,7 +15,7 @@ const invoiceRoutes: FastifyPluginAsync = async (fastify, opts) => {
       include: {
         lines: true
       },
-      orderBy: { issuedAt: 'desc' },
+      orderBy: { issueDate: 'desc' },
       take: 50
     });
     
